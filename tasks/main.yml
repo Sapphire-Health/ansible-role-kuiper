@@ -51,7 +51,7 @@
   become_flags: logon_type=interactive logon_flags=with_profile
   vars:
     ansible_become_user: "{{ kpr_domain_user }}"
-    ansible_become_password: "{{ kpr_domain_user_password }}"
+    ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
   register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
 
@@ -67,7 +67,7 @@
 #   become_flags: logon_type=interactive logon_flags=with_profile
 #   vars:
 #     ansible_become_user: "{{ kpr_domain_user }}"
-#     ansible_become_password: "{{ kpr_domain_user_password }}"
+#     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
 #   register: kuiper_install
 
 # - name: Run executable in 'C:\Program Files' with a custom chdir
@@ -79,7 +79,7 @@
 #   become_flags: logon_type=interactive logon_flags=with_profile
 #   vars:
 #     ansible_become_user: "{{ kpr_domain_user }}"
-#     ansible_become_password: "{{ kpr_domain_user_password }}"
+#     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
 #   register: kuiper_install
 
 - name: Debug

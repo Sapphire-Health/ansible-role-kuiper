@@ -1,0 +1,87 @@
+---
+- name: Check version of installed ansible.windows collection
+  ansible.builtin.debug:
+    msg: "ansible.windows version {{ lookup('community.general.collection_version', 'ansible.windows') }}"
+- name: Create temp folder on target
+  ansible.windows.win_file:
+    path: "{{ kpr_install_files_path }}"
+    state: directory
+
+- name: Copy HTTP install file
+  ansible.windows.win_get_url:
+    url: "{{ kpr_install_source_dir }}/{{ kpr_install_source_file }}"
+    dest: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
+    force: false
+  when: kpr_install_source_dir is ansible.builtin.uri(schemes=['http', 'https'])
+
+- name: Copy install file from Ansible server
+  ansible.windows.win_copy:
+    src: "{{ playbook_dir }}/{{ kpr_install_source_dir }}/{{ kpr_install_source_file }}"
+    dest: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
+    force: false
+  when: kpr_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
+
+- name: Add domain user to local Administrators group
+  ansible.windows.win_group_membership:
+    name: 'Administrators'
+    members: "{{ kpr_domain_user }}"
+    state: present
+
+- name: Install IIS features
+  ansible.windows.win_feature:
+    name:
+      - Web-Server
+      - Web-Mgmt-Console
+      - Web-Scripting-Tools
+      - Web-Asp-Net
+      - Web-Asp-Net45
+    state: present
+
+- name: Install Application from msi with multiple properties for installer
+  ansible.windows.win_package:
+    path: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
+    # product_id: "{{ kpr_product_id }}"
+    provider: msi
+    state: present
+    arguments: "{{ kpr_msi_args }}"
+    log_path: "{{ kpr_install_files_path }}\\kuiper_install.log"
+    wait_for_children: true
+  become: true
+  become_method: ansible.builtin.runas
+  become_flags: logon_type=interactive logon_flags=with_profile
+  vars:
+    ansible_become_user: "{{ kpr_domain_user }}"
+    ansible_become_password: "{{ kpr_domain_user_password }}"
+  register: kuiper_install
+  # failed_when: kuiper_install.rc not in [0, 3010]
+
+# - name: Install Application from msi with DSC
+#   ansible.windows.win_dsc:
+#     resource_name: Package
+#     Name: "Kuiper Install"
+#     Path: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
+#     ProductId: "{{ kpr_product_id }}"
+#     Arguments: "{{ kpr_msi_args }}"
+#   become: true
+#   become_method: ansible.builtin.runas
+#   become_flags: logon_type=interactive logon_flags=with_profile
+#   vars:
+#     ansible_become_user: "{{ kpr_domain_user }}"
+#     ansible_become_password: "{{ kpr_domain_user_password }}"
+#   register: kuiper_install
+
+# - name: Run executable in 'C:\Program Files' with a custom chdir
+#   ansible.windows.win_command:
+#     # When using cmd, the arguments need to be quoted manually
+#     cmd: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }} /qn /norestart {{ kpr_msi_args }}"
+#   become: true
+#   become_method: ansible.builtin.runas
+#   become_flags: logon_type=interactive logon_flags=with_profile
+#   vars:
+#     ansible_become_user: "{{ kpr_domain_user }}"
+#     ansible_become_password: "{{ kpr_domain_user_password }}"
+#   register: kuiper_install
+
+- name: Debug
+  ansible.builtin.debug:
+    msg: "{{ kuiper_install }}"

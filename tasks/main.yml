@@ -53,7 +53,7 @@
     ansible_become_user: "{{ kpr_domain_user }}"
     ansible_become_password: "{{ kpr_domain_user_password }}"
   register: kuiper_install
-  # failed_when: kuiper_install.rc not in [0, 3010]
+  failed_when: kuiper_install.rc not in [0, 3010]
 
 # - name: Install Application from msi with DSC
 #   ansible.windows.win_dsc:

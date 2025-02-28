@@ -46,13 +46,13 @@
     arguments: "{{ kpr_msi_args }}"
     log_path: "{{ kpr_install_files_path }}\\kuiper_install.log"
     wait_for_children: true
+  no_log: true # otherwise, this will output the password
   become: true
   become_method: ansible.builtin.runas
   become_flags: logon_type=interactive logon_flags=with_profile
   vars:
     ansible_become_user: "{{ kpr_domain_user }}"
     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
-  register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
 
 # - name: Install Application from msi with DSC
@@ -82,6 +82,6 @@
 #     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
 #   register: kuiper_install
 
-- name: Debug
-  ansible.builtin.debug:
-    msg: "{{ kuiper_install }}"
+# - name: Debug
+#   ansible.builtin.debug:
+#     msg: "{{ kuiper_install }}"

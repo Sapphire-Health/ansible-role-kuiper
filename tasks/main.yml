@@ -2,6 +2,7 @@
 - name: Check version of installed ansible.windows collection
   ansible.builtin.debug:
     msg: "ansible.windows version {{ lookup('community.general.collection_version', 'ansible.windows') }}"
+
 - name: Create temp folder on target
   ansible.windows.win_file:
     path: "{{ kpr_install_files_path }}"
@@ -24,7 +25,7 @@
 - name: Add domain user to local Administrators group
   ansible.windows.win_group_membership:
     name: 'Administrators'
-    members: "{{ kpr_domain_user }}"
+    members: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_USER', default=kpr_domain_user) }}"
     state: present
 
 - name: Install IIS features
@@ -45,8 +46,8 @@
     state: present
     arguments: >-
       {{ kpr_msi_args }}
-      APPPOOLNAME="{{ kpr_domain_user }}"
-      APPPOOLPASS="{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
+      APPPOOLNAME="{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_USER', default=kpr_domain_user) }}"
+      APPPOOLPASS="{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_password) }}"
     log_path: "{{ kpr_install_files_path }}\\kuiper_install.log"
     wait_for_children: true
   no_log: true # otherwise, this will output the password
@@ -54,8 +55,8 @@
   become_method: ansible.builtin.runas
   become_flags: logon_type=interactive logon_flags=with_profile
   vars:
-    ansible_become_user: "{{ kpr_domain_user }}"
-    ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
+    ansible_become_user: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_USER', default=kpr_domain_user) }}"
+    ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_password) }}"
   register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
 
@@ -71,7 +72,7 @@
 #   become_flags: logon_type=interactive logon_flags=with_profile
 #   vars:
 #     ansible_become_user: "{{ kpr_domain_user }}"
-#     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
+#     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_password) }}"
 #   register: kuiper_install
 
 # - name: Run executable in 'C:\Program Files' with a custom chdir
@@ -83,7 +84,7 @@
 #   become_flags: logon_type=interactive logon_flags=with_profile
 #   vars:
 #     ansible_become_user: "{{ kpr_domain_user }}"
-#     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_user_password) }}"
+#     ansible_become_password: "{{ lookup('ansible.builtin.env', 'KPR_DOMAIN_PASSWORD', default=kpr_domain_password) }}"
 #   register: kuiper_install
 
 # - name: Debug

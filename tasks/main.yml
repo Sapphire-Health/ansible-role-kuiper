@@ -25,10 +25,27 @@
 - name: "Add user to local Administrators group ({{ user }})"
   ansible.windows.win_group_membership:
     name: 'Administrators'
-    members: "{{ user }}"
+    members: "{{ item }}"
     state: present
+  when: item
+  loop:
+    - "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=false) }}"
+    - "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=false) }}"
+
+- name: "If using a GMSA account, give the account the SeServiceLogonRight right"
+  ansible.windows.win_user_right:
+    name: SeServiceLogonRight
+    users:
+      - "{{ gmsa_account }}"
+    action: add
   vars:
-    user: "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user)) }}"
+    gmsa_account: "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
+  when: gmsa_account
+
+- name: Run klist purge to clear Kerberos ticket cache to make sure computer group memberships are updated
+  ansible.windows.win_command:
+    cmd: klist -li 0x3e7 purge
+  changed_when: false
 
 - name: Install IIS features
   ansible.windows.win_feature:
@@ -49,8 +66,12 @@
     state: present
     arguments: >-
       {{ kpr_msi_args }}
-      APPPOOLNAME="{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) }}"
-      APPPOOLPASS="{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) }}"
+      {% if kpr_aes_password %}
+      APPPOOLNAME="{{ gmsa_user }}"
+      {% else %}
+      APPPOOLNAME="{{ domain_user }}"
+      APPPOOLPASS="{{ domain_password }}"
+      {% endif %}
       {% if kpr_aes_password %}
       AES_PASSWORD="{{ kpr_aes_password }}"
       AES_PASSWORD_CONFIRM="{{ kpr_aes_password }}"
@@ -66,6 +87,9 @@
     ansible_become_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) }}"
     ansible_become_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) }}"
     kpr_aes_password: "{{ lookup('ansible.builtin.env', 'AES_PASSWORD', default=aes_password) | default(false) }}"
+    domain_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) | default(false) }}"
+    domain_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) | default(false) }}"
+    gmsa_user: "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
   register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
 

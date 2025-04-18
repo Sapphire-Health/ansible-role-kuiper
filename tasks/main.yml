@@ -29,7 +29,7 @@
     state: present
   when: item
   loop:
-    - "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=false) }}"
+    - "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
     - "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=false) }}"
 
 - name: "If using a GMSA account, give the account the SeServiceLogonRight right"

@@ -22,7 +22,7 @@
     force: false
   when: kpr_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
 
-- name: "Add user to local Administrators group ({{ user }})"
+- name: "Add user to local Administrators group ({{ item }})"
   ansible.windows.win_group_membership:
     name: 'Administrators'
     members: "{{ item }}"
@@ -40,7 +40,7 @@
     action: add
   vars:
     gmsa_account: "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
-  when: gmsa_account
+  when: gmsa_account is string
 
 - name: Run klist purge to clear Kerberos ticket cache to make sure computer group memberships are updated
   ansible.windows.win_command:

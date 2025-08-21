@@ -22,7 +22,7 @@
     force: false
   when: kpr_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
 
-- name: "Add user to local Administrators group ({{ item }})"
+- name: "Add user to local Administrators group"
   ansible.windows.win_group_membership:
     name: 'Administrators'
     members: "{{ item }}"

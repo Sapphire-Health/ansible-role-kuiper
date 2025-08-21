@@ -27,7 +27,7 @@
     name: 'Administrators'
     members: "{{ item }}"
     state: present
-  when: item
+  when: item is string
   loop:
     - "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
     - "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=false) }}"

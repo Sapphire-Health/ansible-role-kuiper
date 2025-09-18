@@ -49,14 +49,15 @@
 
 - name: Install IIS features
   ansible.windows.win_feature:
-    name:
-      - Web-Server
-      - Web-Mgmt-Console
-      - Web-Scripting-Tools
-      - Web-Asp-Net
-      - Web-Asp-Net45
-      - RSAT-AD-PowerShell
+    name: "{{ item }}"
     state: present
+  loop:
+    - Web-Server
+    - Web-Mgmt-Console
+    - Web-Scripting-Tools
+    # - Web-Asp-Net
+    - Web-Asp-Net45
+    - RSAT-AD-PowerShell
 
 - name: Install Application from msi with multiple properties for installer
   ansible.windows.win_package:

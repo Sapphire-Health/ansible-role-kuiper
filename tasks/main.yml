@@ -82,6 +82,7 @@
     wait_for_children: true
   no_log: true # otherwise, this will output the password
   become: true
+  throttle: 1
   become_method: ansible.builtin.runas
   become_flags: logon_type=interactive logon_flags=with_profile
   vars:

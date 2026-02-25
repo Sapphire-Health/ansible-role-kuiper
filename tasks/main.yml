@@ -5,22 +5,22 @@
 
 - name: Create temp folder on target
   ansible.windows.win_file:
-    path: "{{ kpr_install_files_path }}"
+    path: "{{ kuiper_install_files_path }}"
     state: directory
 
 - name: Copy HTTP install file
   ansible.windows.win_get_url:
-    url: "{{ kpr_install_source_dir }}/{{ kpr_install_source_file }}"
-    dest: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
+    url: "{{ kuiper_install_source_dir }}/{{ kuiper_install_source_file }}"
+    dest: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
     force: false
-  when: kpr_install_source_dir is ansible.builtin.uri(schemes=['http', 'https'])
+  when: kuiper_install_source_dir is ansible.builtin.uri(schemes=['http', 'https'])
 
 - name: Copy install file from Ansible server
   ansible.windows.win_copy:
-    src: "{{ playbook_dir }}/{{ kpr_install_source_dir }}/{{ kpr_install_source_file }}"
-    dest: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
+    src: "{{ kuiper_install_source_dir }}/{{ kuiper_install_source_file }}"
+    dest: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
     force: false
-  when: kpr_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
+  when: kuiper_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
 
 - name: "Add user to local Administrators group"
   ansible.windows.win_group_membership:
@@ -29,7 +29,7 @@
     state: present
   when: item is string
   loop:
-    - "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
+    - "{{ lookup('ansible.builtin.env', 'KUIPER_GMSA_USER', default=kuiper_gmsa_user) | default(false) }}"
     - "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=false) }}"
 
 - name: "If using a GMSA account, give the account the SeServiceLogonRight right"
@@ -39,7 +39,7 @@
       - "{{ gmsa_account }}"
     action: add
   vars:
-    gmsa_account: "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
+    gmsa_account: "{{ lookup('ansible.builtin.env', 'KUIPER_GMSA_USER', default=kuiper_gmsa_user) | default(false) }}"
   when: gmsa_account is string
 
 - name: Run klist purge to clear Kerberos ticket cache to make sure computer group memberships are updated
@@ -61,24 +61,24 @@
 
 - name: Install Application from msi with multiple properties for installer
   ansible.windows.win_package:
-    path: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
-    # product_id: "{{ kpr_product_id }}"
+    path: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
+    # product_id: "{{ kuiper_product_id }}"
     provider: msi
     state: present
     arguments: >-
-      {{ kpr_msi_args }}
+      {{ kuiper_msi_args }}
       {% if gmsa_user %}
       APPPOOLNAME="{{ gmsa_user }}"
       {% else %}
       APPPOOLNAME="{{ domain_user }}"
       APPPOOLPASS="{{ domain_password }}"
       {% endif %}
-      {% if kpr_aes_password %}
-      AES_PASSWORD="{{ kpr_aes_password }}"
-      AES_PASSWORD_CONFIRM="{{ kpr_aes_password }}"
+      {% if aes_password %}
+      AES_PASSWORD="{{ aes_password }}"
+      AES_PASSWORD_CONFIRM="{{ aes_password }}"
       ENCRYPT_TYPE=AES
       {% endif %}
-    log_path: "{{ kpr_install_files_path }}\\kuiper_install.log"
+    log_path: "{{ kuiper_install_files_path }}\\kuiper_install.log"
     wait_for_children: true
   no_log: true # otherwise, this will output the password
   become: true
@@ -88,10 +88,10 @@
   vars:
     ansible_become_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) }}"
     ansible_become_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) }}"
-    kpr_aes_password: "{{ lookup('ansible.builtin.env', 'AES_PASSWORD', default=aes_password) | default(false) }}"
+    aes_password: "{{ lookup('ansible.builtin.env', 'KUIPER_AES_PASSWORD', default=kuiper_aes_password) | default(false) }}"
     domain_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) | default(false) }}"
     domain_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) | default(false) }}"
-    gmsa_user: "{{ lookup('ansible.builtin.env', 'KPR_GMSA_USER', default=kpr_gmsa_user) | default(false) }}"
+    gmsa_user: "{{ lookup('ansible.builtin.env', 'KUIPER_GMSA_USER', default=kuiper_gmsa_user) | default(false) }}"
   register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
 
@@ -99,9 +99,9 @@
 #   ansible.windows.win_dsc:
 #     resource_name: Package
 #     Name: "Kuiper Install"
-#     Path: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }}"
-#     ProductId: "{{ kpr_product_id }}"
-#     Arguments: "{{ kpr_msi_args }}"
+#     Path: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
+#     ProductId: "{{ kuiper_product_id }}"
+#     Arguments: "{{ kuiper_msi_args }}"
 #   become: true
 #   become_method: ansible.builtin.runas
 #   become_flags: logon_type=interactive logon_flags=with_profile
@@ -113,7 +113,7 @@
 # - name: Run executable in 'C:\Program Files' with a custom chdir
 #   ansible.windows.win_command:
 #     # When using cmd, the arguments need to be quoted manually
-#     cmd: "{{ kpr_install_files_path }}\\{{ kpr_install_source_file }} /qn /norestart {{ kpr_msi_args }}"
+#     cmd: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }} /qn /norestart {{ kuiper_msi_args }}"
 #   become: true
 #   become_method: ansible.builtin.runas
 #   become_flags: logon_type=interactive logon_flags=with_profile

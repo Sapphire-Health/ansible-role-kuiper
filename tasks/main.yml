@@ -88,10 +88,10 @@
   vars:
     ansible_become_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) }}"
     ansible_become_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) }}"
-    aes_password: "{{ lookup('ansible.builtin.env', 'KUIPER_AES_PASSWORD', default=kuiper_aes_password) | default(false) }}"
-    domain_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) | default(false) }}"
-    domain_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) | default(false) }}"
-    gmsa_user: "{{ lookup('ansible.builtin.env', 'KUIPER_GMSA_USER', default=kuiper_gmsa_user) | default(false) }}"
+    aes_password: "{{ (lookup('ansible.builtin.env', 'KUIPER_AES_PASSWORD') | default(kuiper_aes_password, true) | default(false)) }}"
+    domain_user: "{{ (lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER') | default(epic_domain_user, true) | default(false)) }}"
+    domain_password: "{{ (lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD') | default(epic_domain_password, true) | default(false)) }}"
+    gmsa_user: "{{ (lookup('ansible.builtin.env', 'KUIPER_GMSA_USER') | default(kuiper_gmsa_user, true) | default(false)) }}"
   register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
 

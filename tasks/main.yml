@@ -1,24 +1,81 @@
 ---
+
+- name: Reliably get the session user regardless of auth type
+  ansible.windows.win_command: whoami
+  register: kuiper_who
+  changed_when: false
+
+- name: Normalize session user and password
+  ansible.builtin.set_fact:
+    kuiper_session_user: "{{ kuiper_who.stdout | trim }}"
+
+# - name: Debug session user
+#   ansible.builtin.debug:
+#     msg: "Session user is {{ kuiper_session_user }}"
+
+- name: Verify SQL connectivity and permissions for Kuiper installation
+  ansible.windows.win_powershell:
+    script: |
+      $conn = New-Object System.Data.SqlClient.SqlConnection "{{ kuiper_sql_string }}"
+      try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = "SELECT SUSER_SNAME() AS CurrentUser, IS_SRVROLEMEMBER('sysadmin') AS IsSysAdmin, IS_ROLEMEMBER('db_owner') AS IsDbOwner"
+        $reader = $cmd.ExecuteReader()
+        if ($reader.Read()) {
+          $user       = $reader['CurrentUser']
+          $isSysAdmin = $reader['IsSysAdmin'] -eq 1
+          $isDbOwner  = $reader['IsDbOwner']  -eq 1
+          $Ansible.Result['user']        = $user
+          $Ansible.Result['is_sysadmin'] = $isSysAdmin
+          $Ansible.Result['is_db_owner'] = $isDbOwner
+          if (-not ($isSysAdmin -or $isDbOwner)) {
+            throw "User '$user' requires sysadmin or db_owner on the Kuiper database"
+          }
+        }
+      } catch [System.Data.SqlClient.SqlException] {
+        $n = $_.Exception.Number
+        $msg = switch ($n) {
+          4060   { "Database '$($conn.Database)' does not exist or is not accessible" }
+          18456  { "Login failed for user connecting to '$($conn.DataSource)'" }
+          916    { "User does not have permission to access database '$($conn.Database)'" }
+          -1     { "Could not connect to SQL Server '$($conn.DataSource)' — server unreachable or not listening" }
+          default { "SQL error $n on '$($conn.DataSource)': $($_.Exception.Message)" }
+        }
+        throw $msg
+      } catch {
+        throw "Unexpected error connecting to '$($conn.DataSource)': $_"
+      } finally {
+        $conn.Dispose()
+      }
+  become: true
+  become_method: ansible.builtin.runas
+  become_flags: logon_type=interactive logon_flags=with_profile
+  become_user: "{{ kuiper_session_user }}"
+  vars:
+    ansible_become_password: "{{ ansible_password }}"
+  changed_when: false
+
 - name: Check version of installed ansible.windows collection
   ansible.builtin.debug:
     msg: "ansible.windows version {{ lookup('community.general.collection_version', 'ansible.windows') }}"
 
 - name: Create temp folder on target
   ansible.windows.win_file:
-    path: "{{ kuiper_install_files_path }}"
+    path: "{{ kuiper_temp_dir }}"
     state: directory
 
 - name: Copy HTTP install file
   ansible.windows.win_get_url:
     url: "{{ kuiper_install_source_dir }}/{{ kuiper_install_source_file }}"
-    dest: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
+    dest: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
     force: false
   when: kuiper_install_source_dir is ansible.builtin.uri(schemes=['http', 'https'])
 
 - name: Copy install file from Ansible server
   ansible.windows.win_copy:
     src: "{{ kuiper_install_source_dir }}/{{ kuiper_install_source_file }}"
-    dest: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
+    dest: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
     force: false
   when: kuiper_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
 
@@ -29,8 +86,8 @@
     state: present
   when: item is string
   loop:
-    - "{{ lookup('ansible.builtin.env', 'KUIPER_GMSA_USER', default=kuiper_gmsa_user) | default(false) }}"
-    - "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=false) }}"
+    - "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
+    - "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) | default(false, true) }}"
 
 - name: "If using a GMSA account, give the account the SeServiceLogonRight right"
   ansible.windows.win_user_right:
@@ -39,7 +96,7 @@
       - "{{ gmsa_account }}"
     action: add
   vars:
-    gmsa_account: "{{ lookup('ansible.builtin.env', 'KUIPER_GMSA_USER', default=kuiper_gmsa_user) | default(false) }}"
+    gmsa_account: "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
   when: gmsa_account is string
 
 - name: Run klist purge to clear Kerberos ticket cache to make sure computer group memberships are updated
@@ -55,17 +112,18 @@
     - Web-Server
     - Web-Mgmt-Console
     - Web-Scripting-Tools
-    # - Web-Asp-Net
+    - Web-Asp-Net
     - Web-Asp-Net45
     - RSAT-AD-PowerShell
 
 - name: Install Application from msi with multiple properties for installer
   ansible.windows.win_package:
-    path: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
+    path: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
     # product_id: "{{ kuiper_product_id }}"
     provider: msi
     state: present
     arguments: >-
+      SQL_STRING="{{ kuiper_sql_string }}"
       {{ kuiper_msi_args }}
       {% if gmsa_user %}
       APPPOOLNAME="{{ gmsa_user }}"
@@ -78,28 +136,37 @@
       AES_PASSWORD_CONFIRM="{{ aes_password }}"
       ENCRYPT_TYPE=AES
       {% endif %}
-    log_path: "{{ kuiper_install_files_path }}\\kuiper_install.log"
+    log_path: "{{ kuiper_temp_dir }}\\kuiper_install.log"
     wait_for_children: true
-  no_log: true # otherwise, this will output the password
+  # no_log: true # otherwise, this will output the password
   become: true
-  throttle: 1
   become_method: ansible.builtin.runas
-  become_flags: logon_type=interactive logon_flags=with_profile
+  # become_flags: logon_type=interactive logon_flags=with_profile
+  become_user: "{{ kuiper_session_user }}"
+  throttle: 1
   vars:
-    ansible_become_user: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER', default=epic_domain_user) }}"
-    ansible_become_password: "{{ lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD', default=epic_domain_password) }}"
-    aes_password: "{{ (lookup('ansible.builtin.env', 'KUIPER_AES_PASSWORD') | default(kuiper_aes_password, true) | default(false)) }}"
-    domain_user: "{{ (lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER') | default(epic_domain_user, true) | default(false)) }}"
-    domain_password: "{{ (lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD') | default(epic_domain_password, true) | default(false)) }}"
-    gmsa_user: "{{ (lookup('ansible.builtin.env', 'KUIPER_GMSA_USER') | default(kuiper_gmsa_user, true) | default(false)) }}"
+    ansible_become_password: "{{ ansible_password }}"
+    # ansible_become_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) }}"
+    # ansible_become_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) }}"
+    aes_password: "{{ kuiper_aes_password | default(lookup('ansible.builtin.env', 'KUIPER_AES_PASSWORD'), true) | default(false, true) }}"
+    domain_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) | default(false, true) }}"
+    domain_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) | default(false, true) }}"
+    gmsa_user: "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
   register: kuiper_install
   failed_when: kuiper_install.rc not in [0, 3010]
+
+- name: Confirm https://localhost/Kuiper is reachable
+  ansible.windows.win_uri:
+    url: https://localhost/Kuiper
+    method: GET
+    validate_certs: false
+  # register: kuiper_check
 
 # - name: Install Application from msi with DSC
 #   ansible.windows.win_dsc:
 #     resource_name: Package
 #     Name: "Kuiper Install"
-#     Path: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }}"
+#     Path: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
 #     ProductId: "{{ kuiper_product_id }}"
 #     Arguments: "{{ kuiper_msi_args }}"
 #   become: true
@@ -113,7 +180,7 @@
 # - name: Run executable in 'C:\Program Files' with a custom chdir
 #   ansible.windows.win_command:
 #     # When using cmd, the arguments need to be quoted manually
-#     cmd: "{{ kuiper_install_files_path }}\\{{ kuiper_install_source_file }} /qn /norestart {{ kuiper_msi_args }}"
+#     cmd: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }} /qn /norestart {{ kuiper_msi_args }}"
 #   become: true
 #   become_method: ansible.builtin.runas
 #   become_flags: logon_type=interactive logon_flags=with_profile

@@ -1,1 +1,2 @@
 kuiper_install_source_dir: "{{ shared_files_directory }}"
+kuiper_temp_dir: C:\Temp

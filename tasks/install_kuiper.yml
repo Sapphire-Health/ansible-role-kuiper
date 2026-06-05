@@ -1,0 +1,97 @@
+---
+- name: Run tasks
+  tags:
+    - always
+  block:
+    - name: Create temp folder on target
+      ansible.windows.win_file:
+        path: "{{ kuiper_temp_dir }}"
+        state: directory
+
+    - name: Copy HTTP install file
+      ansible.windows.win_get_url:
+        url: "{{ kuiper_install_source_dir }}/{{ kuiper_install_source_file }}"
+        dest: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
+        force: false
+      when: kuiper_install_source_dir is ansible.builtin.uri(schemes=['http', 'https'])
+
+    - name: Copy install file from Ansible server
+      ansible.windows.win_copy:
+        src: "{{ kuiper_install_source_dir }}/{{ kuiper_install_source_file }}"
+        dest: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
+        force: false
+      when: kuiper_install_source_dir is not ansible.builtin.uri(schemes=['http', 'https'])
+
+    - name: Install Kuiper MSI
+      block:
+        - name: Install Application from msi with multiple properties for installer
+          ansible.windows.win_package:
+            path: "{{ kuiper_temp_dir }}\\{{ kuiper_install_source_file }}"
+            # product_id: "{{ kuiper_product_id }}"
+            provider: msi
+            state: present
+            arguments: >-
+              SQL_STRING="{{ kuiper_sql_string }}"
+              {{ kuiper_msi_args }}
+              {% if gmsa_user %}
+              APPPOOLNAME="{{ gmsa_user }}"
+              {% else %}
+              APPPOOLNAME="{{ domain_user }}"
+              APPPOOLPASS="{{ domain_password }}"
+              {% endif %}
+              {% if kuiper_normalized_aes_password %}
+              AES_PASSWORD="{{ kuiper_normalized_aes_password }}"
+              AES_PASSWORD_CONFIRM="{{ kuiper_normalized_aes_password }}"
+              ENCRYPT_TYPE=AES
+              {% endif %}
+            log_path: "{{ kuiper_temp_dir }}\\{{ kuiper_msi_install_log_name }}"
+            wait_for_children: true
+          # no_log: true # otherwise, this will output the password
+          become: true
+          become_method: ansible.builtin.runas
+          # become_flags: logon_type=interactive logon_flags=with_profile
+          become_user: "{{ kuiper_session_user }}"
+          throttle: 1
+          vars:
+            ansible_become_password: "{{ ansible_password }}"
+            # ansible_become_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) }}"
+            # ansible_become_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) }}"
+            domain_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) | default(false, true) }}"
+            domain_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) | default(false, true) }}"
+            gmsa_user: "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
+          register: kuiper_install
+          failed_when: kuiper_install.rc not in [0, 3010]
+      rescue:
+        - name: Read last 100 lines of MSI install log
+          ansible.windows.win_shell: >-
+            Get-Content "{{ kuiper_temp_dir }}\{{ kuiper_msi_install_log_name }}" -Tail 100 | Out-String
+          register: kuiper_install_log_tail
+          changed_when: false
+
+        - name: Show MSI install log tail
+          ansible.builtin.debug:
+            msg: "{{ kuiper_install_log_tail.stdout_lines }}"
+
+        - name: Re-raise install failure
+          ansible.builtin.fail:
+            msg: "Kuiper MSI installation failed. See log output above."
+
+    - name: Confirm https://localhost/Kuiper is reachable
+      ansible.windows.win_uri:
+        url: https://localhost/Kuiper
+        method: GET
+        timeout: 60
+        validate_certs: false
+      register: kuiper_check
+      retries: 5
+      delay: 0
+      until: kuiper_check is not failed
+
+  always:
+    - name: Delete temporary directory
+      ansible.windows.win_file:
+        path: "{{ kuiper_temp_dir }}"
+        state: absent
+      when: kuiper_delete_temp_dir
+      failed_when: false
+      ignore_unreachable: true

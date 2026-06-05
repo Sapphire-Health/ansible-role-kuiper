@@ -3,12 +3,36 @@
   tags:
     - always
   block:
-    - name: Ensure server_admin_password is defined to prevent double-hop issues authenticating to SQL Server via Windows integrated authentication
-      ansible.builtin.assert:
-        that:
-          - ansible_password is defined
-          - ansible_password | length > 0
-        fail_msg: "server_admin_password must be defined and non-empty"
+    - name: Get install user
+      block:
+        - name: Reliably get the session user regardless of auth type
+          ansible.windows.win_command: whoami
+          register: kuiper_who
+          changed_when: false
+          when: kuiper_install_user | length == 0
+
+        - name: Get user for installation
+          ansible.builtin.set_fact:
+            kuiper_install_user: "{{ kuiper_who.stdout | trim }}"
+          when: kuiper_who is not skipped
+
+        - name: Show install user
+          ansible.builtin.debug:
+            msg: "Kuiper will be installed as {{ kuiper_install_user }}"
+
+    - name: Get install password
+      block:
+        - name: Get password for installation
+          ansible.builtin.set_fact:
+            kuiper_install_password: "{{ ansible_password }}"
+          when: kuiper_install_password | length == 0
+
+        - name: Ensure server_admin_password or kuiper_install_password is defined to prevent double-hop issues with SQL Windows integrated authentication
+          ansible.builtin.assert:
+            that:
+              - kuiper_install_password is defined
+              - kuiper_install_password | length > 0
+            fail_msg: "server_admin_password or kuiper_install_password must be defined and non-empty"
 
     - name: Check AES password
       ansible.builtin.set_fact:
@@ -22,19 +46,6 @@
           {{ 'AES password is set - Kuiper will be installed with support for multiple instances.'
             if kuiper_normalized_aes_password
             else 'AES password is not set - Kuiper will be installed with support for a single instance only.' }}
-
-    - name: Reliably get the session user regardless of auth type
-      ansible.windows.win_command: whoami
-      register: kuiper_who
-      changed_when: false
-
-    - name: Normalize session user and password
-      ansible.builtin.set_fact:
-        kuiper_session_user: "{{ kuiper_who.stdout | trim }}"
-
-    # - name: Debug session user
-    #   ansible.builtin.debug:
-    #     msg: "Session user is {{ kuiper_session_user }}"
 
     - name: Verify SQL connectivity and permissions for Kuiper installation
       ansible.windows.win_powershell:
@@ -74,9 +85,9 @@
       become: true
       become_method: ansible.builtin.runas
       become_flags: logon_type=interactive logon_flags=with_profile
-      become_user: "{{ kuiper_session_user }}"
+      become_user: "{{ kuiper_install_user }}"
       vars:
-        ansible_become_password: "{{ ansible_password }}"
+        ansible_become_password: "{{ kuiper_install_password }}"
       changed_when: false
 
     - name: Check version of installed ansible.windows collection

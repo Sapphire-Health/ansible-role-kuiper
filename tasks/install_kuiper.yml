@@ -66,13 +66,14 @@
           register: kuiper_install
           failed_when: kuiper_install.rc not in [0, 3010]
       rescue:
-        - name: Read last 100 lines of MSI install log
+        - name: Read MSI install log lines containing errors or failures
           ansible.windows.win_shell: >-
-            Get-Content "{{ kuiper_temp_dir }}\{{ kuiper_msi_install_log_name }}" -Tail 500 | Out-String
+            Get-Content "{{ kuiper_temp_dir }}\\{{ kuiper_msi_install_log_name }}" |
+            Where-Object { $_ -imatch 'fail|error' } | Out-String
           register: kuiper_install_log_tail
           changed_when: false
 
-        - name: Show MSI install log tail
+        - name: Show MSI install log errors and failures
           ansible.builtin.debug:
             msg: "{{ kuiper_install_log_tail.stdout_lines }}"
 
@@ -81,7 +82,7 @@
             msg: >-
               Kuiper MSI installation failed. See log output above.
               The full log is available at
-              {{ kuiper_temp_dir }}\{{ kuiper_msi_install_log_name }} on the target host.
+              {{ kuiper_temp_dir }}\\{{ kuiper_msi_install_log_name }} on the target host.
 
     - name: Confirm https://localhost/Kuiper is reachable
       ansible.windows.win_uri:

@@ -1,2 +1,4 @@
 kuiper_install_source_dir: "{{ shared_files_directory }}"
 kuiper_temp_dir: C:\Temp
+kuiper_msi_install_log_name: kuiper_install.log
+kuiper_delete_temp_dir: true

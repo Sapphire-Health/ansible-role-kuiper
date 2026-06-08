@@ -1,0 +1,41 @@
+---
+- name: Run tasks
+  tags:
+    - always
+  block:
+    - name: "Add user to local Administrators group"
+      ansible.windows.win_group_membership:
+        name: 'Administrators'
+        members: "{{ item }}"
+        state: present
+      when: item is string
+      loop:
+        - "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
+        - "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) | default(false, true) }}"
+
+    - name: "If using a GMSA account, give the account the SeServiceLogonRight right"
+      ansible.windows.win_user_right:
+        name: SeServiceLogonRight
+        users:
+          - "{{ gmsa_account }}"
+        action: add
+      vars:
+        gmsa_account: "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
+      when: gmsa_account is string
+
+    - name: Run klist purge to clear Kerberos ticket cache to make sure computer group memberships are updated
+      ansible.windows.win_command:
+        cmd: klist -li 0x3e7 purge
+      changed_when: false
+
+    - name: Install IIS features
+      ansible.windows.win_feature:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - Web-Server
+        - Web-Mgmt-Console
+        - Web-Scripting-Tools
+        - Web-Asp-Net
+        - Web-Asp-Net45
+        - RSAT-AD-PowerShell

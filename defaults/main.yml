@@ -1,1 +1,12 @@
 kuiper_install_source_dir: "{{ shared_files_directory }}"
+# kuiper_install_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) }}"
+# kuiper_install_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) }}"
+kuiper_install_user: ""
+kuiper_install_password: ""
+kuiper_temp_dir: C:\\Windows\\Temp\\kuiper_install
+kuiper_msi_install_log_name: kuiper_install.log
+kuiper_delete_temp_dir: true
+
+kuiper_url_username: "{{ lookup('ansible.builtin.env', 'URL_USERNAME', default=url_username) }}"
+kuiper_url_password: "{{ lookup('ansible.builtin.env', 'URL_PASSWORD', default=url_password) }}"
+kuiper_force_basic_auth: "{{ lookup('ansible.builtin.env', 'FORCE_BASIC_AUTH', default=force_basic_auth) }}"

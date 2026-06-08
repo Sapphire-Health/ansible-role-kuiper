@@ -1,0 +1,95 @@
+---
+- name: Run tasks
+  tags:
+    - always
+  block:
+    - name: Get install user
+      block:
+        - name: Reliably get the session user regardless of auth type
+          ansible.windows.win_command: whoami
+          register: kuiper_who
+          changed_when: false
+          when: kuiper_install_user | length == 0
+
+        - name: Get user for installation
+          ansible.builtin.set_fact:
+            kuiper_install_user: "{{ kuiper_who.stdout | trim }}"
+          when: kuiper_who is not skipped
+
+        - name: Show install user
+          ansible.builtin.debug:
+            msg: "Kuiper will be installed as {{ kuiper_install_user }}"
+
+    - name: Get install password
+      block:
+        - name: Get password for installation
+          ansible.builtin.set_fact:
+            kuiper_install_password: "{{ ansible_password }}"
+          when: kuiper_install_password | length == 0
+
+        - name: Ensure server_admin_password or kuiper_install_password is defined to prevent double-hop issues with SQL Windows integrated authentication
+          ansible.builtin.assert:
+            that:
+              - kuiper_install_password is defined
+              - kuiper_install_password | length > 0
+            fail_msg: "server_admin_password or kuiper_install_password must be defined and non-empty"
+
+    - name: Check AES password
+      ansible.builtin.set_fact:
+        kuiper_normalized_aes_password: "{{ kuiper_aes_password | default(lookup('ansible.builtin.env', 'KUIPER_AES_PASSWORD'), true) | default(false, true) }}"
+
+    - name: AES password status
+      ansible.builtin.debug:
+        msg: "{{ kuiper_aes_install_msg }}"
+      vars:
+        kuiper_aes_install_msg: >-
+          {{ 'AES password is set - Kuiper will be installed with support for multiple instances.'
+            if kuiper_normalized_aes_password
+            else 'AES password is not set - Kuiper will be installed with support for a single instance only.' }}
+
+    - name: Verify SQL connectivity and permissions for Kuiper installation
+      ansible.windows.win_powershell:
+        script: |
+          $conn = New-Object System.Data.SqlClient.SqlConnection "{{ kuiper_sql_string }}"
+          try {
+            $conn.Open()
+            $cmd = $conn.CreateCommand()
+            $cmd.CommandText = "SELECT SUSER_SNAME() AS CurrentUser, IS_SRVROLEMEMBER('sysadmin') AS IsSysAdmin, IS_ROLEMEMBER('db_owner') AS IsDbOwner"
+            $reader = $cmd.ExecuteReader()
+            if ($reader.Read()) {
+              $user       = $reader['CurrentUser']
+              $isSysAdmin = $reader['IsSysAdmin'] -eq 1
+              $isDbOwner  = $reader['IsDbOwner']  -eq 1
+              $Ansible.Result['user']        = $user
+              $Ansible.Result['is_sysadmin'] = $isSysAdmin
+              $Ansible.Result['is_db_owner'] = $isDbOwner
+              if (-not ($isSysAdmin -or $isDbOwner)) {
+                throw "User '$user' requires sysadmin or db_owner on the Kuiper database"
+              }
+            }
+          } catch [System.Data.SqlClient.SqlException] {
+            $n = $_.Exception.Number
+            $msg = switch ($n) {
+              4060   { "Database '$($conn.Database)' does not exist or is not accessible" }
+              18456  { "Login failed for user connecting to '$($conn.DataSource)'" }
+              916    { "User does not have permission to access database '$($conn.Database)'" }
+              -1     { "Could not connect to SQL Server '$($conn.DataSource)' — server unreachable or not listening" }
+              default { "SQL error $n on '$($conn.DataSource)': $($_.Exception.Message)" }
+            }
+            throw $msg
+          } catch {
+            throw "Unexpected error connecting to '$($conn.DataSource)': $_"
+          } finally {
+            $conn.Dispose()
+          }
+      become: true
+      become_method: ansible.builtin.runas
+      become_flags: logon_type=interactive logon_flags=with_profile
+      become_user: "{{ kuiper_install_user }}"
+      vars:
+        ansible_become_password: "{{ kuiper_install_password }}"
+      changed_when: false
+
+    - name: Check version of installed ansible.windows collection
+      ansible.builtin.debug:
+        msg: "ansible.windows version {{ lookup('community.general.collection_version', 'ansible.windows') }}"

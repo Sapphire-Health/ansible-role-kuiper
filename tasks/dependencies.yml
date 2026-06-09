@@ -11,7 +11,7 @@
       when: item is string
       loop:
         - "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
-        - "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) | default(false, true) }}"
+        - "{{ kuiper_install_user | default(lookup('ansible.builtin.env', 'KUIPER_INSTALL_USER'), true) | default(false, true) }}"
 
     - name: "If using a GMSA account, give the account the SeServiceLogonRight right"
       ansible.windows.win_user_right:

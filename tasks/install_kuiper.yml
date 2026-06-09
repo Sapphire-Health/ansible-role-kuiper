@@ -58,10 +58,8 @@
           throttle: 1
           vars:
             ansible_become_password: "{{ kuiper_install_password }}"
-            # ansible_become_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) }}"
-            # ansible_become_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) }}"
-            domain_user: "{{ epic_domain_user | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_USER'), true) | default(false, true) }}"
-            domain_password: "{{ epic_domain_password | default(lookup('ansible.builtin.env', 'EPIC_DOMAIN_PASSWORD'), true) | default(false, true) }}"
+            domain_user: "{{ kuiper_install_user | default(lookup('ansible.builtin.env', 'KUIPER_INSTALL_USER'), true) | default(false, true) }}"
+            domain_password: "{{ kuiper_install_password | default(lookup('ansible.builtin.env', 'KUIPER_INSTALL_PASSWORD'), true) | default(false, true) }}"
             gmsa_user: "{{ kuiper_gmsa_user | default(lookup('ansible.builtin.env', 'KUIPER_GMSA_USER'), true) | default(false, true) }}"
           register: kuiper_install
           failed_when: kuiper_install.rc not in [0, 3010]

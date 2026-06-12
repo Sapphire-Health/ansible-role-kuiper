@@ -24,7 +24,7 @@
       block:
         - name: Get password for installation
           ansible.builtin.set_fact:
-            kuiper_install_password: "{{ ansible_password }}"
+            kuiper_install_password: "{{ lookup('ansible.builtin.env', 'KUIPER_INSTALL_PASSWORD') | default(ansible_password, true) }}"
           when: kuiper_install_password | length == 0
 
         - name: Ensure server_admin_password or kuiper_install_password is defined to prevent double-hop issues with SQL Windows integrated authentication

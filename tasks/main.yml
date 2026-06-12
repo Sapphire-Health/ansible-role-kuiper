@@ -1,17 +1,30 @@
+- name: Require a specific tag to indicate intent
+  ansible.builtin.fail:
+    msg: >-
+      A tag must be specified to indicate intent (e.g., --tags install).
+      Running without tags or with --tags all is not supported.
+      Repo: https://github.com/Sapphire-Health/ansible-role-kuiper
+      Docs: https://ansible-docs.sapphirehealth.org/kuiper/usage-guide/
+  when: "'all' in ansible_run_tags"
+  tags: always
+
 - name: Check prerequisites
   ansible.builtin.include_tasks:
     file: prerequisites.yml
   tags:
     - prerequisites
+    - install
 
 - name: Install/Configure Dependencies
   ansible.builtin.include_tasks:
     file: dependencies.yml
   tags:
     - dependencies
+    - install
 
 - name: Install Kuiper
   ansible.builtin.include_tasks:
     file: install_kuiper.yml
   tags:
     - install_kuiper
+    - install
